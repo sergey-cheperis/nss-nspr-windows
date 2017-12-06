@@ -54,7 +54,6 @@ export async function buildTask({name, path}) {
     ],
     platform: "nss-decision",
     features: ["dind"],
-    maxRunTime: 7200,
     kind: "build",
     symbol: "I"
   };

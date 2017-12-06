@@ -61,11 +61,7 @@ class TlsConnectTestBase : public ::testing::Test {
   // Reset, and update the certificate names on both peers
   void Reset(const std::string& server_name,
              const std::string& client_name = "client");
-  // Replace the server.
-  void MakeNewServer();
 
-  // Set up
-  void StartConnect();
   // Run the handshake.
   void Handshake();
   // Connect and check that it works.
@@ -94,7 +90,6 @@ class TlsConnectTestBase : public ::testing::Test {
                    std::function<void(SSLNamedGroup)> check_group);
   void CheckShares(const DataBuffer& shares,
                    std::function<void(SSLNamedGroup)> check_group);
-  void CheckEpochs(uint16_t client_epoch, uint16_t server_epoch) const;
 
   void ConfigureVersion(uint16_t version);
   void SetExpectedVersion(uint16_t version);
@@ -106,7 +101,6 @@ class TlsConnectTestBase : public ::testing::Test {
   void EnableOnlyDheCiphers();
   void EnableSomeEcdhCiphers();
   void EnableExtendedMasterSecret();
-  void ConfigureSelfEncrypt();
   void ConfigureSessionCache(SessionResumptionMode client,
                              SessionResumptionMode server);
   void EnableAlpn();
@@ -115,7 +109,7 @@ class TlsConnectTestBase : public ::testing::Test {
   void CheckAlpn(const std::string& val);
   void EnableSrtp();
   void CheckSrtp() const;
-  void SendReceive(size_t total = 50);
+  void SendReceive();
   void SetupForZeroRtt();
   void SetupForResume();
   void ZeroRttSendReceive(
@@ -126,9 +120,6 @@ class TlsConnectTestBase : public ::testing::Test {
   void ExpectEarlyDataAccepted(bool expected);
   void DisableECDHEServerKeyReuse();
   void SkipVersionChecks();
-
-  // Move the DTLS timers for both endpoints to pop the next timer.
-  void ShiftDtlsTimers();
 
  protected:
   SSLProtocolVariant variant_;
@@ -260,11 +251,6 @@ class TlsConnectDatagram13 : public TlsConnectTestBase {
       : TlsConnectTestBase(ssl_variant_datagram, SSL_LIBRARY_VERSION_TLS_1_3) {}
 };
 
-class TlsConnectDatagramPre13 : public TlsConnectDatagram {
- public:
-  TlsConnectDatagramPre13() {}
-};
-
 // A variant that is used only with Pre13.
 class TlsConnectGenericPre13 : public TlsConnectGeneric {};
 
@@ -277,10 +263,8 @@ class TlsKeyExchangeTest : public TlsConnectGeneric {
 
   void EnsureKeyShareSetup();
   void ConfigNamedGroups(const std::vector<SSLNamedGroup>& groups);
-  std::vector<SSLNamedGroup> GetGroupDetails(
-      const std::shared_ptr<TlsExtensionCapture>& capture);
-  std::vector<SSLNamedGroup> GetShareDetails(
-      const std::shared_ptr<TlsExtensionCapture>& capture);
+  std::vector<SSLNamedGroup> GetGroupDetails(const DataBuffer& ext);
+  std::vector<SSLNamedGroup> GetShareDetails(const DataBuffer& ext);
   void CheckKEXDetails(const std::vector<SSLNamedGroup>& expectedGroups,
                        const std::vector<SSLNamedGroup>& expectedShares);
   void CheckKEXDetails(const std::vector<SSLNamedGroup>& expectedGroups,

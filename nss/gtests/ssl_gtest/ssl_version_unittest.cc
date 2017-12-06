@@ -158,7 +158,8 @@ TEST_F(TlsConnectTest, DisallowSSLv3HelloWithTLSv13Enabled) {
 TEST_P(TlsConnectGeneric, AlertBeforeServerHello) {
   EnsureTlsSetup();
   client_->ExpectReceiveAlert(kTlsAlertUnrecognizedName, kTlsAlertWarning);
-  StartConnect();
+  client_->StartConnect();
+  server_->StartConnect();
   client_->Handshake();  // Send ClientHello.
   static const uint8_t kWarningAlert[] = {kTlsAlertWarning,
                                           kTlsAlertUnrecognizedName};
@@ -217,20 +218,20 @@ TEST_F(TlsConnectStreamTls13, Tls14ClientHelloWithSupportedVersions) {
   client_->SetPacketFilter(
       std::make_shared<TlsInspectorClientHelloVersionSetter>(
           SSL_LIBRARY_VERSION_TLS_1_3 + 1));
-  auto capture =
-      std::make_shared<TlsExtensionCapture>(ssl_tls13_supported_versions_xtn);
+  auto capture = std::make_shared<TlsInspectorRecordHandshakeMessage>(
+      kTlsHandshakeServerHello);
   server_->SetPacketFilter(capture);
   client_->ExpectSendAlert(kTlsAlertBadRecordMac);
   server_->ExpectSendAlert(kTlsAlertBadRecordMac);
   ConnectExpectFail();
   client_->CheckErrorCode(SSL_ERROR_BAD_MAC_READ);
   server_->CheckErrorCode(SSL_ERROR_BAD_MAC_READ);
-
-  ASSERT_EQ(2U, capture->extension().len());
-  uint32_t version = 0;
-  ASSERT_TRUE(capture->extension().Read(0, 2, &version));
+  const DataBuffer& server_hello = capture->buffer();
+  ASSERT_GT(server_hello.len(), 2U);
+  uint32_t ver;
+  ASSERT_TRUE(server_hello.Read(0, 2, &ver));
   // This way we don't need to change with new draft version.
-  ASSERT_LT(static_cast<uint32_t>(SSL_LIBRARY_VERSION_TLS_1_2), version);
+  ASSERT_LT(static_cast<uint32_t>(SSL_LIBRARY_VERSION_TLS_1_2), ver);
 }
 
 }  // namespace nss_test

@@ -137,6 +137,7 @@ TEST_F(TlsConnectStreamTls13, LargeRecord) {
   const size_t record_limit = 16384;
   auto replacer = std::make_shared<RecordReplacer>(record_limit);
   client_->SetTlsRecordFilter(replacer);
+  replacer->EnableDecryption();
   Connect();
 
   replacer->Enable();
@@ -151,6 +152,7 @@ TEST_F(TlsConnectStreamTls13, TooLargeRecord) {
   const size_t record_limit = 16384;
   auto replacer = std::make_shared<RecordReplacer>(record_limit + 1);
   client_->SetTlsRecordFilter(replacer);
+  replacer->EnableDecryption();
   Connect();
 
   replacer->Enable();
