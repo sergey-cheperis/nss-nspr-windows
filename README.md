@@ -1,6 +1,6 @@
 # nss-nspr-windows
 
-Mozilla NSS and NSPR set up to be built for Windows (Vista and later) by Visual Studio 2017.
+Mozilla NSS and NSPR set up to be built for Windows (Vista and later) with Visual Studio 2017.
 
 **Network Security Services (NSS)** is a set of libraries designed to support cross-platform development of security-enabled
 client and server applications. For more information, see https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS.
@@ -19,7 +19,7 @@ Sources were patched to fix minor Windows-specific build errors.
 1. Visual Studio 2017 with Windows 8.1 or 10 SDK (not tested with other versions)
 2. Mozilla Build suite: https://wiki.mozilla.org/MozillaBuild
 
-# Usage
+## Usage
 
 1. In **build.cmd**, change the paths to Visual Studio helper files and Mozilla Build suite (if your paths differ from defaults).
 2. Run **build.cmd**.
