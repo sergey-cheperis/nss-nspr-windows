@@ -1,0 +1,11 @@
+dist
+tests_results
+
+**/.cvsignore
+**/.hg
+**/.hgignore
+**/.hgtags
+
+**/*OPT.OBJ/
+**/*DBG.OBJ/
+**/*DBG.OBJD/
