@@ -1572,7 +1572,7 @@ done:
     return error;
 }
 
-PRInt32
+static PRInt32
 ReadFile(const char *filename, char **data)
 {
     char *ret = NULL;
