@@ -10,9 +10,19 @@ and is required to build NSS. See https://developer.mozilla.org/en-US/docs/Mozil
 
 This repository contains following stable releases:
 * NSPR 4.17
-* NSS 3.34
+* NSS 3.34.1
 
 Sources were patched to fix minor Windows-specific build errors. 
+
+## Pre-built libraries
+
+Normally you don't need to compile the libraries yourself. You can just download the zip archive from the **prebuilt** directory.
+The archive contains include files, .lib files, .dll's and tools, that is everything needed to use NSS+NSPR in your program.
+Both debug and release builds are included, as well as both 32-bit and 64-bit platforms.
+
+To run tools, you'll need to copy .dll's to "bin" directory or keep them somewhere in your PATH.
+
+Following sections are applicable if you are going to compile libraries yourself.
 
 ## Required software
 
@@ -24,7 +34,9 @@ Sources were patched to fix minor Windows-specific build errors.
 1. In **build.cmd**, change the paths to Visual Studio helper files and Mozilla Build suite (if your paths differ from defaults).
 2. Run **build.cmd**.
 3. Run **test.cmd** if you want to run tests (can take a very long time).
+4. Run **powershell -file create-prebuilt.archive.ps1** to create the pre-built zip archive.
 
 ## Known issues
 
 1. During one of build stages, **shlibsign** program may produce "Debug Assertion" dialogs. Just click "Ignore" in these dialogs.
+2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program.
