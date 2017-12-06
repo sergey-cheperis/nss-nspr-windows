@@ -9,3 +9,5 @@ tests_results
 **/*OPT.OBJ/
 **/*DBG.OBJ/
 **/*DBG.OBJD/
+
+**/*.orig
