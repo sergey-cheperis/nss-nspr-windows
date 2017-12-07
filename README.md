@@ -16,7 +16,7 @@ Sources were patched to fix minor Windows-specific build errors.
 
 ## Required software
 
-1. Visual Studio 2017 with Windows 8.1 or 10 SDK (not tested with other versions)
+1. Visual Studio 2017 with C++ support, x86 and amd64 platforms, Windows 8.1 or 10 SDK, and ATL (not tested with other versions)
 2. Mozilla Build suite: https://wiki.mozilla.org/MozillaBuild
 
 ## Usage
