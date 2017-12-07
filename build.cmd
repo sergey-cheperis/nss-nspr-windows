@@ -8,23 +8,26 @@ SET "VsPath=C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Aux
 SET "MozBuild=c:\mozilla-build"
 
 
+SET Target=nss_build_all
+IF "%1" NEQ "" SET Target=%1
+
 SET "CommonOpt=OS_TARGET=WIN95 USE_STATIC_RTL=1"
 SET "ReleaseOpt=BUILD_OPT=1"
 SET "DebugOpt=USE_DEBUG_RTL=1"
 
 SET "Bash=%MozBuild%\msys\bin\bash --login -i -c"
 SET "SrcDir=%~dp0nss"
-SET "Make=make nss_build_all"
+SET "MOZILLABUILD=%MozBuild%\"
 
 
 :: 32-bit builds
 CALL "%VsPath%\vcvars32.bat"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
-%BASH% "cd '%SrcDir%'; %CommonOpt% %DebugOpt% %Make%"
+%BASH% "cd '%SrcDir%'; %CommonOpt% %DebugOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
-%BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% %Make%"
+%BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
 
@@ -34,8 +37,8 @@ SET "CommonOpt=%CommonOpt% USE_64=1"
 CALL "%VsPath%\vcvars64.bat"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
-%BASH% "cd '%SrcDir%'; %CommonOpt% %DebugOpt% %Make%"
+%BASH% "cd '%SrcDir%'; %CommonOpt% %DebugOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
-%BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% %Make%"
+%BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%

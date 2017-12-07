@@ -24,3 +24,7 @@ Sources were patched to fix minor Windows-specific build errors.
 1. In **build.cmd**, change the paths to Visual Studio helper files and Mozilla Build suite (if your paths differ from defaults).
 2. Run **build.cmd**.
 3. Run **test.cmd** if you want to run tests (can take a very long time).
+
+## Known issues
+
+1. During one of build stages, **shlibsign** program may produce "Debug Assertion" dialogs. Just click "Ignore" in these dialogs.
