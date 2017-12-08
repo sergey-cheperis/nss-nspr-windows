@@ -34,7 +34,7 @@ Following sections are applicable if you are going to compile libraries yourself
 1. In **build.cmd**, change the paths to Visual Studio helper files and Mozilla Build suite (if your paths differ from defaults).
 2. Run **build.cmd**.
 3. Run **test.cmd** if you want to run tests (can take a very long time).
-4. Run **powershell -file create-prebuilt.archive.ps1** to create the pre-built zip archive.
+4. Run **powershell -file create-prebuilt-archive.ps1** to create the pre-built zip archive.
 
 ## Known issues
 
