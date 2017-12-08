@@ -40,3 +40,7 @@ Following sections are applicable if you are going to compile libraries yourself
 
 1. During one of build stages, **shlibsign** program may produce "Debug Assertion" dialogs. Just click "Ignore" in these dialogs.
 2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program.
+
+## References
+
+https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/NSS_Sources_Building_Testing
