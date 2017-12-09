@@ -44,3 +44,7 @@ Following sections are applicable if you are going to compile libraries yourself
 ## References
 
 https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/NSS_Sources_Building_Testing
+
+## Code examples
+
+[Program for decoding Firefox saved passwords with NSS](https://gist.github.com/sergey-cheperis/64f28fd6e3ba69dc2d13dca826c1aa99)
