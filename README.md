@@ -20,7 +20,7 @@ Normally you don't need to compile the libraries yourself. You can just download
 The archive contains include files, .lib files, .dll's and tools, that is everything needed to use NSS+NSPR in your program.
 Both debug and release builds are included, as well as both 32-bit and 64-bit platforms.
 
-To run tools, you'll need to copy .dll's to "bin" directory or keep them somewhere in your PATH.
+To run tools, you'll need to copy .dll's to **bin** directory or keep them somewhere in your PATH.
 
 Following sections are applicable if you are going to compile libraries yourself.
 
