@@ -39,7 +39,7 @@ Following sections are applicable if you are going to compile libraries yourself
 ## Known issues
 
 1. During one of build stages, **shlibsign** program may produce "Debug Assertion" dialogs. Just click "Ignore" in these dialogs.
-2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program.
+2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
 
 ## References
 
