@@ -43,7 +43,7 @@ applied to the source tree.
 
 1. **shlibsign** crashes or hangs, so it has been disabled.
 2. NSS does not seem to support building statically yet (though there is work in progress), so you'll have to distribute all the
-DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
+DLL's with your program (except test libs: **gtest132.dll**, **gtestutil32.dll**, **nssckbi-testlib.dll** and **pkcs11testmodule.dll**).
 
 ## TODOs
 
