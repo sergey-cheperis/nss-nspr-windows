@@ -241,6 +241,7 @@ $prog = shift;  # Program to test
 
 # MAIN ---------------
 @progs = (
+"abstract",
 "accept",
 "acceptread",
 "acceptreademu",
@@ -288,7 +289,6 @@ $prog = shift;  # Program to test
 "logfile",
 "logger",
 "many_cv",
-"multiwait",
 "nameshm1",
 "nblayer",
 "nonblock",
