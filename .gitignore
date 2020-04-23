@@ -5,6 +5,8 @@ tests_results
 **/.hg
 **/.hgignore
 **/.hgtags
+**/.hg-annotate-ignore-revs
+**/.arcconfig
 
 **/*OPT.OBJ/
 **/*DBG.OBJ/
