@@ -45,6 +45,10 @@ applied to the source tree.
 2. NSS does not seem to support building statically yet (though there is work in progress), so you'll have to distribute all the
 DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
 
+## TODOs
+
+Convert to use new gyp/ninja build system, which should also allow producing static libraries.
+
 ## References
 
 https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/NSS_Sources_Building_Testing
