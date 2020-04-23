@@ -87,14 +87,11 @@ static void SetupCallbacks(PRFileDesc* fd, ClientConfig* config) {
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t len) {
-  static std::unique_ptr<NSSDatabase> db(new NSSDatabase());
+  std::unique_ptr<NSSDatabase> db(new NSSDatabase());
   assert(db != nullptr);
 
   EnableAllProtocolVersions();
   std::unique_ptr<ClientConfig> config(new ClientConfig(data, len));
-
-  // Clear the cache. We never want to resume as we couldn't reproduce that.
-  SSL_ClearSessionCache();
 
   // Reset the RNG state.
   assert(RNG_RandomUpdate(NULL, 0) == SECSuccess);
@@ -109,10 +106,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t len) {
   // Probably not too important for clients.
   SSL_SetURL(ssl_fd, "server");
 
+  FixTime(ssl_fd);
   SetSocketOptions(ssl_fd, config);
   EnableAllCipherSuites(ssl_fd);
   SetupCallbacks(ssl_fd, config.get());
   DoHandshake(ssl_fd, false);
+
+  // Release all SIDs.
+  SSL_ClearSessionCache();
 
   return 0;
 }

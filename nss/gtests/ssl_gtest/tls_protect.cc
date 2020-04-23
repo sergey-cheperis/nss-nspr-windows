@@ -5,138 +5,141 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "tls_protect.h"
+#include "sslproto.h"
 #include "tls_filter.h"
 
 namespace nss_test {
 
-AeadCipher::~AeadCipher() {
-  if (key_) {
-    PK11_FreeSymKey(key_);
+static uint64_t FirstSeqno(bool dtls, uint16_t epoc) {
+  if (dtls) {
+    return static_cast<uint64_t>(epoc) << 48;
   }
+  return 0;
 }
 
-bool AeadCipher::Init(PK11SymKey *key, const uint8_t *iv) {
-  key_ = PK11_ReferenceSymKey(key);
-  if (!key_) return false;
+TlsCipherSpec::TlsCipherSpec(bool dtls, uint16_t epoc)
+    : dtls_(dtls),
+      epoch_(epoc),
+      in_seqno_(FirstSeqno(dtls, epoc)),
+      out_seqno_(FirstSeqno(dtls, epoc)) {}
 
-  memcpy(iv_, iv, sizeof(iv_));
+bool TlsCipherSpec::SetKeys(SSLCipherSuiteInfo* cipherinfo,
+                            PK11SymKey* secret) {
+  SSLAeadContext* aead_ctx;
+  SSLProtocolVariant variant =
+      dtls_ ? ssl_variant_datagram : ssl_variant_stream;
+  SECStatus rv =
+      SSL_MakeVariantAead(SSL_LIBRARY_VERSION_TLS_1_3, cipherinfo->cipherSuite,
+                          variant, secret, "", 0,  // Use the default labels.
+                          &aead_ctx);
+  if (rv != SECSuccess) {
+    return false;
+  }
+  aead_.reset(aead_ctx);
+
+  SSLMaskingContext* mask_ctx;
+  const char kHkdfPurposeSn[] = "sn";
+  rv = SSL_CreateVariantMaskingContext(
+      SSL_LIBRARY_VERSION_TLS_1_3, cipherinfo->cipherSuite, variant, secret,
+      kHkdfPurposeSn, strlen(kHkdfPurposeSn), &mask_ctx);
+  if (rv != SECSuccess) {
+    return false;
+  }
+  mask_.reset(mask_ctx);
   return true;
 }
 
-void AeadCipher::FormatNonce(uint64_t seq, uint8_t *nonce) {
-  memcpy(nonce, iv_, 12);
-
-  for (size_t i = 0; i < 8; ++i) {
-    nonce[12 - (i + 1)] ^= seq & 0xff;
-    seq >>= 8;
+bool TlsCipherSpec::Unprotect(const TlsRecordHeader& header,
+                              const DataBuffer& ciphertext,
+                              DataBuffer* plaintext,
+                              TlsRecordHeader* out_header) {
+  if (!aead_ || !out_header) {
+    return false;
   }
+  *out_header = header;
 
-  DataBuffer d(nonce, 12);
-  std::cerr << "Nonce " << d << std::endl;
-}
-
-bool AeadCipher::AeadInner(bool decrypt, void *params, size_t param_length,
-                           const uint8_t *in, size_t inlen, uint8_t *out,
-                           size_t *outlen, size_t maxlen) {
-  SECStatus rv;
-  unsigned int uoutlen = 0;
-  SECItem param = {
-      siBuffer, static_cast<unsigned char *>(params),
-      static_cast<unsigned int>(param_length),
-  };
-
-  if (decrypt) {
-    rv = PK11_Decrypt(key_, mech_, &param, out, &uoutlen, maxlen, in, inlen);
-  } else {
-    rv = PK11_Encrypt(key_, mech_, &param, out, &uoutlen, maxlen, in, inlen);
-  }
-  *outlen = (int)uoutlen;
-
-  return rv == SECSuccess;
-}
-
-bool AeadCipherAesGcm::Aead(bool decrypt, uint64_t seq, const uint8_t *in,
-                            size_t inlen, uint8_t *out, size_t *outlen,
-                            size_t maxlen) {
-  CK_GCM_PARAMS aeadParams;
-  unsigned char nonce[12];
-
-  memset(&aeadParams, 0, sizeof(aeadParams));
-  aeadParams.pIv = nonce;
-  aeadParams.ulIvLen = sizeof(nonce);
-  aeadParams.pAAD = NULL;
-  aeadParams.ulAADLen = 0;
-  aeadParams.ulTagBits = 128;
-
-  FormatNonce(seq, nonce);
-  return AeadInner(decrypt, (unsigned char *)&aeadParams, sizeof(aeadParams),
-                   in, inlen, out, outlen, maxlen);
-}
-
-bool AeadCipherChacha20Poly1305::Aead(bool decrypt, uint64_t seq,
-                                      const uint8_t *in, size_t inlen,
-                                      uint8_t *out, size_t *outlen,
-                                      size_t maxlen) {
-  CK_NSS_AEAD_PARAMS aeadParams;
-  unsigned char nonce[12];
-
-  memset(&aeadParams, 0, sizeof(aeadParams));
-  aeadParams.pNonce = nonce;
-  aeadParams.ulNonceLen = sizeof(nonce);
-  aeadParams.pAAD = NULL;
-  aeadParams.ulAADLen = 0;
-  aeadParams.ulTagLen = 16;
-
-  FormatNonce(seq, nonce);
-  return AeadInner(decrypt, (unsigned char *)&aeadParams, sizeof(aeadParams),
-                   in, inlen, out, outlen, maxlen);
-}
-
-bool TlsCipherSpec::Init(SSLCipherAlgorithm cipher, PK11SymKey *key,
-                         const uint8_t *iv) {
-  switch (cipher) {
-    case ssl_calg_aes_gcm:
-      aead_.reset(new AeadCipherAesGcm());
-      break;
-    case ssl_calg_chacha20:
-      aead_.reset(new AeadCipherChacha20Poly1305());
-      break;
-    default:
-      return false;
-  }
-
-  return aead_->Init(key, iv);
-}
-
-bool TlsCipherSpec::Unprotect(const TlsRecordHeader &header,
-                              const DataBuffer &ciphertext,
-                              DataBuffer *plaintext) {
   // Make space.
   plaintext->Allocate(ciphertext.len());
 
-  size_t len;
-  bool ret =
-      aead_->Aead(true, header.sequence_number(), ciphertext.data(),
-                  ciphertext.len(), plaintext->data(), &len, plaintext->len());
-  if (!ret) return false;
+  unsigned int len;
+  uint64_t seqno = dtls_ ? header.sequence_number() : in_seqno_;
+  SECStatus rv;
 
-  plaintext->Truncate(len);
+  if (header.is_dtls13_ciphertext()) {
+    if (!mask_ || !out_header) {
+      return false;
+    }
+    PORT_Assert(ciphertext.len() >= 16);
+    DataBuffer mask(2);
+    rv = SSL_CreateMask(mask_.get(), ciphertext.data(), ciphertext.len(),
+                        mask.data(), mask.len());
+    if (rv != SECSuccess) {
+      return false;
+    }
+
+    if (!out_header->MaskSequenceNumber(mask)) {
+      return false;
+    }
+    seqno = out_header->sequence_number();
+  }
+
+  auto header_bytes = out_header->header();
+  rv = SSL_AeadDecrypt(aead_.get(), seqno, header_bytes.data(),
+                       header_bytes.len(), ciphertext.data(), ciphertext.len(),
+                       plaintext->data(), &len, plaintext->len());
+  if (rv != SECSuccess) {
+    return false;
+  }
+
+  RecordUnprotected(seqno);
+  plaintext->Truncate(static_cast<size_t>(len));
 
   return true;
 }
 
-bool TlsCipherSpec::Protect(const TlsRecordHeader &header,
-                            const DataBuffer &plaintext,
-                            DataBuffer *ciphertext) {
-  // Make a padded buffer.
+bool TlsCipherSpec::Protect(const TlsRecordHeader& header,
+                            const DataBuffer& plaintext, DataBuffer* ciphertext,
+                            TlsRecordHeader* out_header) {
+  if (!aead_ || !out_header) {
+    return false;
+  }
 
+  *out_header = header;
+
+  // Make a padded buffer.
   ciphertext->Allocate(plaintext.len() +
                        32);  // Room for any plausible auth tag
-  size_t len;
-  bool ret =
-      aead_->Aead(false, header.sequence_number(), plaintext.data(),
-                  plaintext.len(), ciphertext->data(), &len, ciphertext->len());
-  if (!ret) return false;
+  unsigned int len;
+
+  DataBuffer header_bytes;
+  (void)header.WriteHeader(&header_bytes, 0, plaintext.len() + 16);
+  uint64_t seqno = dtls_ ? header.sequence_number() : out_seqno_;
+
+  SECStatus rv =
+      SSL_AeadEncrypt(aead_.get(), seqno, header_bytes.data(),
+                      header_bytes.len(), plaintext.data(), plaintext.len(),
+                      ciphertext->data(), &len, ciphertext->len());
+  if (rv != SECSuccess) {
+    return false;
+  }
+
+  if (header.is_dtls13_ciphertext()) {
+    if (!mask_ || !out_header) {
+      return false;
+    }
+    PORT_Assert(ciphertext->len() >= 16);
+    DataBuffer mask(2);
+    rv = SSL_CreateMask(mask_.get(), ciphertext->data(), ciphertext->len(),
+                        mask.data(), mask.len());
+    if (rv != SECSuccess) {
+      return false;
+    }
+    if (!out_header->MaskSequenceNumber(mask)) {
+      return false;
+    }
+  }
+
+  RecordProtected();
   ciphertext->Truncate(len);
 
   return true;

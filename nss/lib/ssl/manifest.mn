@@ -1,10 +1,13 @@
-#
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 CORE_DEPTH = ../..
 
 # DEFINES = -DTRACE
+
+ifdef ZLIB_INCLUDE_DIR
+INCLUDES += -I$(ZLIB_INCLUDE_DIR)
+endif
 
 EXPORTS = \
         ssl.h \
@@ -20,13 +23,15 @@ MAPFILE = $(OBJDIR)/ssl.def
 
 CSRCS = \
         dtlscon.c \
+        dtls13con.c \
         prelib.c \
         ssl3con.c \
         ssl3gthr.c \
         sslauth.c \
+        sslbloom.c \
         sslcon.c \
         ssldef.c \
-        ssl3encode.c \
+        sslencode.c \
         sslenum.c \
         sslerr.c \
         sslerrstrs.c \
@@ -39,6 +44,7 @@ CSRCS = \
         sslsecur.c \
         sslsnce.c \
         sslsock.c \
+        sslspec.c \
         ssltrace.c \
         sslver.c \
         authcert.c \
@@ -48,9 +54,14 @@ CSRCS = \
         ssl3ecc.c \
         tls13con.c \
         tls13exthandle.c \
+        tls13hashstate.c \
         tls13hkdf.c \
+        tls13replay.c \
         sslcert.c \
         sslgrp.c \
+        sslprimitive.c \
+        tls13esni.c \
+        tls13subcerts.c \
         $(NULL)
 
 LIBRARY_NAME = ssl

@@ -43,10 +43,10 @@ class SignedCertificateTimestampsExtractor {
   }
 
   void assertTimestamps(const DataBuffer& timestamps) {
-    EXPECT_TRUE(auth_timestamps_);
+    ASSERT_NE(nullptr, auth_timestamps_);
     EXPECT_EQ(timestamps, *auth_timestamps_);
 
-    EXPECT_TRUE(handshake_timestamps_);
+    ASSERT_NE(nullptr, handshake_timestamps_);
     EXPECT_EQ(timestamps, *handshake_timestamps_);
 
     const SECItem* current =
@@ -64,8 +64,8 @@ static const uint8_t kSctValue[] = {0x01, 0x23, 0x45, 0x67, 0x89};
 static const SECItem kSctItem = {siBuffer, const_cast<uint8_t*>(kSctValue),
                                  sizeof(kSctValue)};
 static const DataBuffer kSctBuffer(kSctValue, sizeof(kSctValue));
-static const SSLExtraServerCertData kExtraSctData = {ssl_auth_null, nullptr,
-                                                     nullptr, &kSctItem};
+static const SSLExtraServerCertData kExtraSctData = {
+    ssl_auth_null, nullptr, nullptr, &kSctItem, nullptr, nullptr};
 
 // Test timestamps extraction during a successful handshake.
 TEST_P(TlsConnectGenericPre13, SignedCertificateTimestampsLegacy) {
@@ -147,8 +147,8 @@ static const SECItem kOcspItems[] = {
     {siBuffer, const_cast<uint8_t*>(kOcspValue2), sizeof(kOcspValue2)}};
 static const SECItemArray kOcspResponses = {const_cast<SECItem*>(kOcspItems),
                                             PR_ARRAY_SIZE(kOcspItems)};
-const static SSLExtraServerCertData kOcspExtraData = {ssl_auth_null, nullptr,
-                                                      &kOcspResponses, nullptr};
+const static SSLExtraServerCertData kOcspExtraData = {
+    ssl_auth_null, nullptr, &kOcspResponses, nullptr, nullptr, nullptr};
 
 TEST_P(TlsConnectGeneric, NoOcsp) {
   EnsureTlsSetup();
@@ -180,9 +180,8 @@ TEST_P(TlsConnectGenericPre13, OcspMangled) {
       server_->ConfigServerCert(TlsAgent::kServerRsa, true, &kOcspExtraData));
 
   static const uint8_t val[] = {1};
-  auto replacer = std::make_shared<TlsExtensionReplacer>(
-      ssl_cert_status_xtn, DataBuffer(val, sizeof(val)));
-  server_->SetPacketFilter(replacer);
+  auto replacer = MakeTlsFilter<TlsExtensionReplacer>(
+      server_, ssl_cert_status_xtn, DataBuffer(val, sizeof(val)));
   ConnectExpectAlert(client_, kTlsAlertIllegalParameter);
   client_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_SERVER_HELLO);
   server_->CheckErrorCode(SSL_ERROR_ILLEGAL_PARAMETER_ALERT);
@@ -192,8 +191,7 @@ TEST_P(TlsConnectGeneric, OcspSuccess) {
   EnsureTlsSetup();
   client_->SetOption(SSL_ENABLE_OCSP_STAPLING, PR_TRUE);
   auto capture_ocsp =
-      std::make_shared<TlsExtensionCapture>(ssl_cert_status_xtn);
-  server_->SetPacketFilter(capture_ocsp);
+      MakeTlsFilter<TlsExtensionCapture>(server_, ssl_cert_status_xtn);
 
   // The value should be available during the AuthCertificateCallback
   client_->SetAuthCertificateCallback([](TlsAgent* agent, bool checksig,
@@ -226,7 +224,7 @@ TEST_P(TlsConnectGeneric, OcspHugeSuccess) {
   const SECItemArray hugeOcspResponses = {const_cast<SECItem*>(hugeOcspItems),
                                           PR_ARRAY_SIZE(hugeOcspItems)};
   const SSLExtraServerCertData hugeOcspExtraData = {
-      ssl_auth_null, nullptr, &hugeOcspResponses, nullptr};
+      ssl_auth_null, nullptr, &hugeOcspResponses, nullptr, nullptr, nullptr};
 
   // The value should be available during the AuthCertificateCallback
   client_->SetAuthCertificateCallback([&](TlsAgent* agent, bool checksig,
@@ -245,4 +243,4 @@ TEST_P(TlsConnectGeneric, OcspHugeSuccess) {
   Connect();
 }
 
-}  // namespace nspr_test
+}  // namespace nss_test

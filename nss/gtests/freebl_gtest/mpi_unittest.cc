@@ -6,16 +6,18 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <memory>
 
 #ifdef __MACH__
 #include <mach/clock.h>
 #include <mach/mach.h>
 #endif
 
+#include "mplogic.h"
 #include "mpi.h"
 namespace nss_test {
 
-void gettime(struct timespec *tp) {
+void gettime(struct timespec* tp) {
 #ifdef __MACH__
   clock_serv_t cclock;
   mach_timespec_t mts;
@@ -27,7 +29,7 @@ void gettime(struct timespec *tp) {
   tp->tv_sec = mts.tv_sec;
   tp->tv_nsec = mts.tv_nsec;
 #else
-  clock_gettime(CLOCK_MONOTONIC, tp);
+  ASSERT_NE(0, timespec_get(tp, TIME_UTC));
 #endif
 }
 
@@ -68,6 +70,40 @@ class MPITest : public ::testing::Test {
     mp_clear(&a);
     mp_clear(&b);
     mp_clear(&c);
+  }
+
+  void dump(const std::string& prefix, const uint8_t* buf, size_t len) {
+    auto flags = std::cerr.flags();
+    std::cerr << prefix << ": [" << std::dec << len << "] ";
+    for (size_t i = 0; i < len; ++i) {
+      std::cerr << std::hex << std::setw(2) << std::setfill('0')
+                << static_cast<int>(buf[i]);
+    }
+    std::cerr << std::endl << std::resetiosflags(flags);
+  }
+
+  void TestToFixedOctets(const std::vector<uint8_t>& ref, size_t len) {
+    mp_int a;
+    ASSERT_EQ(MP_OKAY, mp_init(&a));
+    ASSERT_EQ(MP_OKAY, mp_read_unsigned_octets(&a, ref.data(), ref.size()));
+    std::unique_ptr<uint8_t[]> buf(new uint8_t[len]);
+    ASSERT_NE(buf, nullptr);
+    ASSERT_EQ(MP_OKAY, mp_to_fixlen_octets(&a, buf.get(), len));
+    size_t compare;
+    if (len > ref.size()) {
+      for (size_t i = 0; i < len - ref.size(); ++i) {
+        ASSERT_EQ(0U, buf[i]) << "index " << i << " should be zero";
+      }
+      compare = ref.size();
+    } else {
+      compare = len;
+    }
+    dump("value", ref.data(), ref.size());
+    dump("output", buf.get(), len);
+    ASSERT_EQ(0, memcmp(buf.get() + len - compare,
+                        ref.data() + ref.size() - compare, compare))
+        << "comparing " << compare << " octets";
+    mp_clear(&a);
   }
 };
 
@@ -113,6 +149,130 @@ TEST_F(MPITest, MpiCmpUnalignedTest) {
 }
 #endif
 
+// The two follow tests ensure very similar mp_set_* functions are ok.
+TEST_F(MPITest, MpiSetUlong) {
+  mp_int a, b, c;
+  MP_DIGITS(&a) = 0;
+  MP_DIGITS(&b) = 0;
+  MP_DIGITS(&c) = 0;
+  ASSERT_EQ(MP_OKAY, mp_init(&a));
+  ASSERT_EQ(MP_OKAY, mp_init(&b));
+  ASSERT_EQ(MP_OKAY, mp_init(&c));
+  EXPECT_EQ(MP_OKAY, mp_set_ulong(&a, 1));
+  EXPECT_EQ(MP_OKAY, mp_set_ulong(&b, 0));
+  EXPECT_EQ(MP_OKAY, mp_set_ulong(&c, -1));
+
+  mp_clear(&a);
+  mp_clear(&b);
+  mp_clear(&c);
+}
+
+TEST_F(MPITest, MpiSetInt) {
+  mp_int a, b, c;
+  MP_DIGITS(&a) = 0;
+  MP_DIGITS(&b) = 0;
+  MP_DIGITS(&c) = 0;
+  ASSERT_EQ(MP_OKAY, mp_init(&a));
+  ASSERT_EQ(MP_OKAY, mp_init(&b));
+  ASSERT_EQ(MP_OKAY, mp_init(&c));
+  EXPECT_EQ(MP_OKAY, mp_set_int(&a, 1));
+  EXPECT_EQ(MP_OKAY, mp_set_int(&b, 0));
+  EXPECT_EQ(MP_OKAY, mp_set_int(&c, -1));
+
+  mp_clear(&a);
+  mp_clear(&b);
+  mp_clear(&c);
+}
+
+TEST_F(MPITest, MpiFixlenOctetsZero) {
+  std::vector<uint8_t> zero = {0};
+  TestToFixedOctets(zero, 1);
+  TestToFixedOctets(zero, 2);
+  TestToFixedOctets(zero, sizeof(mp_digit));
+  TestToFixedOctets(zero, sizeof(mp_digit) + 1);
+}
+
+TEST_F(MPITest, MpiFixlenOctetsVarlen) {
+  std::vector<uint8_t> packed;
+  for (size_t i = 0; i < sizeof(mp_digit) * 2; ++i) {
+    packed.push_back(0xa4);  // Any non-zero value will do.
+    TestToFixedOctets(packed, packed.size());
+    TestToFixedOctets(packed, packed.size() + 1);
+    TestToFixedOctets(packed, packed.size() + sizeof(mp_digit));
+  }
+}
+
+TEST_F(MPITest, MpiFixlenOctetsTooSmall) {
+  uint8_t buf[sizeof(mp_digit) * 3];
+  std::vector<uint8_t> ref;
+  for (size_t i = 0; i < sizeof(mp_digit) * 2; i++) {
+    ref.push_back(3);  // Any non-zero value will do.
+    dump("ref", ref.data(), ref.size());
+
+    mp_int a;
+    ASSERT_EQ(MP_OKAY, mp_init(&a));
+    ASSERT_EQ(MP_OKAY, mp_read_unsigned_octets(&a, ref.data(), ref.size()));
+#ifdef DEBUG
+    // ARGCHK maps to assert() in a debug build.
+    EXPECT_DEATH(mp_to_fixlen_octets(&a, buf, ref.size() - 1), "");
+#else
+    EXPECT_EQ(MP_BADARG, mp_to_fixlen_octets(&a, buf, ref.size() - 1));
+#endif
+    ASSERT_EQ(MP_OKAY, mp_to_fixlen_octets(&a, buf, ref.size()));
+    ASSERT_EQ(0, memcmp(buf, ref.data(), ref.size()));
+
+    mp_clear(&a);
+  }
+}
+
+TEST_F(MPITest, MpiSqrMulClamp) {
+  mp_int a, r, expect;
+  MP_DIGITS(&a) = 0;
+  MP_DIGITS(&r) = 0;
+  MP_DIGITS(&expect) = 0;
+
+  // Comba32 result is 64 mp_digits. *=2 as this is an ascii representation.
+  std::string expect_str((64 * sizeof(mp_digit)) * 2, '0');
+
+  // Set second-highest bit (0x80...^2 == 0x4000...)
+  expect_str.replace(0, 1, "4", 1);
+
+  // Test 32, 16, 8, and 4-1 mp_digit values. 32-4 (powers of two) use the comba
+  // assembly implementation, if enabled and supported. 3-1 use non-comba.
+  int n_digits = 32;
+  while (n_digits > 0) {
+    ASSERT_EQ(MP_OKAY, mp_init(&r));
+    ASSERT_EQ(MP_OKAY, mp_init(&a));
+    ASSERT_EQ(MP_OKAY, mp_init(&expect));
+    ASSERT_EQ(MP_OKAY, mp_read_radix(&expect, expect_str.c_str(), 16));
+
+    ASSERT_EQ(MP_OKAY, mp_set_int(&a, 1));
+    ASSERT_EQ(MP_OKAY, mpl_lsh(&a, &a, (n_digits * sizeof(mp_digit) * 8) - 1));
+
+    ASSERT_EQ(MP_OKAY, mp_sqr(&a, &r));
+    EXPECT_EQ(MP_USED(&expect), MP_USED(&r));
+    EXPECT_EQ(0, mp_cmp(&r, &expect));
+    mp_clear(&r);
+
+    // Take the mul path...
+    ASSERT_EQ(MP_OKAY, mp_init(&r));
+    ASSERT_EQ(MP_OKAY, mp_mul(&a, &a, &r));
+    EXPECT_EQ(MP_USED(&expect), MP_USED(&r));
+    EXPECT_EQ(0, mp_cmp(&r, &expect));
+
+    mp_clear(&a);
+    mp_clear(&r);
+    mp_clear(&expect);
+
+    // Once we're down to 4, check non-powers of two.
+    int sub = n_digits > 4 ? n_digits / 2 : 1;
+    n_digits -= sub;
+
+    // "Shift right" the string (to avoid mutating |expect_str| with MPI).
+    expect_str.resize(expect_str.size() - 2 * 2 * sizeof(mp_digit) * sub);
+  }
+}
+
 // This test is slow. Disable it by default so we can run these tests on CI.
 class DISABLED_MPITest : public ::testing::Test {};
 
@@ -127,17 +287,17 @@ TEST_F(DISABLED_MPITest, MpiCmpConstTest) {
 
   mp_read_radix(
       &a,
-      const_cast<char *>(
+      const_cast<char*>(
           "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551"),
       16);
   mp_read_radix(
       &b,
-      const_cast<char *>(
+      const_cast<char*>(
           "FF0FFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551"),
       16);
   mp_read_radix(
       &c,
-      const_cast<char *>(
+      const_cast<char*>(
           "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632550"),
       16);
 
@@ -179,4 +339,4 @@ TEST_F(DISABLED_MPITest, MpiCmpConstTest) {
   mp_clear(&c);
 }
 
-}  // nss_test
+}  // namespace nss_test

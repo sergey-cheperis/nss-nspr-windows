@@ -9,7 +9,7 @@
 
 include $(CORE_DEPTH)/coreconf/WIN32.mk
 
-DEFINES += -DWIN95 -D_WIN32_WINNT=_WIN32_WINNT_WIN6
+DEFINES += -DWIN95
 
 # WINNT uses the lib prefix, Win95 doesn't
 NSPR31_LIB_PREFIX = $(NULL)

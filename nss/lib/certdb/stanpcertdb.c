@@ -30,6 +30,7 @@
 #include "pkistore.h"
 #include "dev3hack.h"
 #include "dev.h"
+#include "secmodi.h"
 
 PRBool
 SEC_CertNicknameConflict(const char *nickname, const SECItem *derSubject,
@@ -280,6 +281,18 @@ __CERT_AddTempCertToPerm(CERTCertificate *cert, char *nickname,
     nssCertificateStore_RemoveCertLOCKED(context->certStore, c);
     nssCertificateStore_Unlock(context->certStore, &lockTrace, &unlockTrace);
     c->object.cryptoContext = NULL;
+
+    /* if the id has not been set explicitly yet, create one from the public
+     * key. */
+    if (c->id.data == NULL) {
+        SECItem *keyID = pk11_mkcertKeyID(cert);
+        if (keyID) {
+            nssItem_Create(c->object.arena, &c->id, keyID->len, keyID->data);
+            SECITEM_FreeItem(keyID, PR_TRUE);
+        }
+        /* if any of these failed, continue with our null c->id */
+    }
+
     /* Import the perm instance onto the internal token */
     slot = PK11_GetInternalKeySlot();
     internal = PK11Slot_GetNSSToken(slot);
@@ -343,7 +356,7 @@ CERT_NewTempCertificate(CERTCertDBHandle *handle, SECItem *derCert,
         /* First, see if it is already a temp cert */
         c = NSSCryptoContext_FindCertificateByEncodedCertificate(gCC,
                                                                  &encoding);
-        if (!c) {
+        if (!c && handle) {
             /* Then, see if it is already a perm cert */
             c = NSSTrustDomain_FindCertificateByEncodedCertificate(handle,
                                                                    &encoding);
@@ -399,18 +412,17 @@ CERT_NewTempCertificate(CERTCertDBHandle *handle, SECItem *derCert,
                    cc->derIssuer.data);
     nssItem_Create(c->object.arena, &c->subject, cc->derSubject.len,
                    cc->derSubject.data);
-    if (PR_TRUE) {
-        /* CERTCertificate stores serial numbers decoded.  I need the DER
-        * here.  sigh.
-        */
-        SECItem derSerial = { 0 };
-        CERT_SerialNumberFromDERCert(&cc->derCert, &derSerial);
-        if (!derSerial.data)
-            goto loser;
-        nssItem_Create(c->object.arena, &c->serial, derSerial.len,
-                       derSerial.data);
-        PORT_Free(derSerial.data);
-    }
+    /* CERTCertificate stores serial numbers decoded.  I need the DER
+    * here.  sigh.
+    */
+    SECItem derSerial = { 0 };
+    CERT_SerialNumberFromDERCert(&cc->derCert, &derSerial);
+    if (!derSerial.data)
+        goto loser;
+    nssItem_Create(c->object.arena, &c->serial, derSerial.len,
+                   derSerial.data);
+    PORT_Free(derSerial.data);
+
     if (nickname) {
         c->object.tempName =
             nssUTF8_Create(c->object.arena, nssStringType_UTF8String,

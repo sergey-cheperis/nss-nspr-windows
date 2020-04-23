@@ -88,11 +88,11 @@ static const char* errString[] = {
 
 static char* PR_Strdup(const char* str);
 
-#define PAD(x)                  \
-    {                           \
-        int i;                  \
-        for (i = 0; i < x; i++) \
-            printf(" ");        \
+#define PAD(x)                                \
+    {                                         \
+        int pad_i;                            \
+        for (pad_i = 0; pad_i < (x); pad_i++) \
+            printf(" ");                      \
     }
 #define PADINC 4
 
@@ -891,8 +891,6 @@ Pk11Install_Platform_Generate(Pk11Install_Platform* _this,
                 if (errStr) {
                     tmp = PR_smprintf("%s: %s",
                                       Pk11Install_PlatformName_GetString(&_this->name), errStr);
-                    tmp = PR_smprintf("%s: %s",
-                                      Pk11Install_PlatformName_GetString(&_this->name), errStr);
                     PR_smprintf_free(errStr);
                     errStr = tmp;
                     goto loser;
@@ -975,8 +973,7 @@ Pk11Install_Platform_Print(Pk11Install_Platform* _this, int pad)
         printf("Doesn't use equiv\n");
     }
     PAD(pad);
-    printf("Module File: %s\n", _this->moduleFile ? _this->moduleFile
-                                                  : "<NULL>");
+    printf("Module File: %s\n", _this->moduleFile ? _this->moduleFile : "<NULL>");
     PAD(pad);
     printf("mechFlags: %lx\n", _this->mechFlags);
     PAD(pad);

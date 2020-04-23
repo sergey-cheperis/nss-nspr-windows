@@ -10,7 +10,7 @@
       'target_name': 'softokn_static',
       'type': 'static_library',
       'defines': [
-        'NSS_TEST_BUILD',
+        'NSS_STATIC_SOFTOKEN',
       ],
       'dependencies': [
         'softokn_base',
@@ -48,7 +48,7 @@
           'fipstest.c',
           'fipstokn.c',
           'jpakesftk.c',
-          'lgglue.c',
+          'kbkdf.c',
           'lowkey.c',
           'lowpbe.c',
           'padbuf.c',
@@ -58,11 +58,19 @@
           'sdb.c',
           'sftkdb.c',
           'sftkhmac.c',
+          'sftkike.c',
           'sftkpars.c',
           'sftkpwd.c',
           'softkver.c',
           'tlsprf.c'
         ],
+        'conditions': [
+          [ 'disable_dbm==0', {
+            'sources': [
+              'lgglue.c',
+            ]
+          }]
+        ]
       },
     },
     {

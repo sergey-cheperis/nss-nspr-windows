@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this file,
 // You can obtain one at http://mozilla.org/MPL/2.0/.
 
-#include "gcm-vectors.h"
+#include "testvectors/gcm-vectors.h"
 #include "gtest/gtest.h"
 #include "util.h"
 
@@ -10,9 +10,9 @@
 
 namespace nss_test {
 
-class GHashTest : public ::testing::TestWithParam<gcm_kat_value> {
+class GHashTest : public ::testing::TestWithParam<AesGcmKatValue> {
  protected:
-  void TestGHash(const gcm_kat_value val, bool sw) {
+  void TestGHash(const AesGcmKatValue val, bool sw) {
     // Read test data.
     std::vector<uint8_t> hash_key = hex_string_to_bytes(val.hash_key);
     ASSERT_EQ(16UL, hash_key.size());

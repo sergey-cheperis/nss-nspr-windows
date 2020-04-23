@@ -9,7 +9,7 @@
 #include "secport.h"
 #include "prerror.h"
 #include "base64.h"
-#include "key.h"
+#include "keyhi.h"
 #include "secpkcs7.h"
 #include "secasn1.h"
 #include "secder.h"
@@ -406,7 +406,23 @@ SECU_ParseSSLVersionRangeString(const char *input,
 
 SECStatus parseGroupList(const char *arg, SSLNamedGroup **enabledGroups,
                          unsigned int *enabledGroupsCount);
-SSLNamedGroup groupNameToNamedGroup(char *name);
+SECStatus parseSigSchemeList(const char *arg,
+                             const SSLSignatureScheme **enabledSigSchemes,
+                             unsigned int *enabledSigSchemeCount);
+typedef struct {
+    SECItem label;
+    PRBool hasContext;
+    SECItem context;
+    unsigned int outputLength;
+} secuExporter;
+
+SECStatus parseExporters(const char *arg,
+                         const secuExporter **enabledExporters,
+                         unsigned int *enabledExporterCount);
+
+SECStatus exportKeyingMaterials(PRFileDesc *fd,
+                                const secuExporter *exporters,
+                                unsigned int exporterCount);
 
 /*
  *

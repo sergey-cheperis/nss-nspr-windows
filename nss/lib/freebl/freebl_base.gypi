@@ -5,6 +5,7 @@
   'sources': [
     'aeskeywrap.c',
     'alg2268.c',
+    'cmac.c',
     'alghmac.c',
     'arcfive.c',
     'arcfour.c',
@@ -59,7 +60,7 @@
     'sha_fast.c',
     'shvfy.c',
     'sysrand.c',
-    'tlsprfalg.c'
+    'tlsprfalg.c',
   ],
   'conditions': [
     [ 'OS=="linux" or OS=="android"', {
@@ -67,14 +68,12 @@
         [ 'target_arch=="x64"', {
           'sources': [
             'arcfour-amd64-gas.s',
-            'intel-aes.s',
-            'intel-gcm.s',
             'mpi/mpi_amd64.c',
             'mpi/mpi_amd64_gas.s',
             'mpi/mp_comba.c',
           ],
           'conditions': [
-            [ 'cc_is_clang==1', {
+            [ 'cc_is_clang==1 and fuzz!=1 and coverage!=1', {
               'cflags': [
                 '-no-integrated-as',
               ],
@@ -101,7 +100,7 @@
     }],
     [ 'OS=="win"', {
       'libraries': [
-        'advapi32.lib',
+        '-ladvapi32',
       ],
       'conditions': [
         [ 'cc_use_gnu_ld!=1 and target_arch=="x64"', {
@@ -114,12 +113,16 @@
             'intel-gcm-x64-masm.asm',
           ],
         }],
-	      [ 'cc_use_gnu_ld!=1 and target_arch!="x64"', {
-          # not x64
+        [ 'cc_use_gnu_ld!=1 and target_arch=="ia32"', {
           'sources': [
             'mpi/mpi_x86_asm.c',
             'intel-aes-x86-masm.asm',
             'intel-gcm-x86-masm.asm',
+          ],
+        }],
+        [ 'cc_use_gnu_ld==1', {
+          # mingw
+          'sources': [
           ],
         }],
         [ 'cc_is_clang!=1', {
@@ -130,32 +133,27 @@
         }],
       ],
     }],
-    ['target_arch=="ia32" or target_arch=="x64"', {
+    ['have_int128_support==1 and \
+      (target_arch=="x64" or target_arch=="arm64" or target_arch=="aarch64")', {
       'sources': [
-        # All intel architectures get the 64 bit version
+        # All intel x64 and 64-bit ARM architectures get the 64 bit version.
         'ecl/curve25519_64.c',
-        'verified/hacl_curve25519_64.c',
+        'verified/Hacl_Curve25519_51.c',
       ],
     }, {
       'sources': [
-        # All non intel architectures get the generic 32 bit implementation (slow!)
+        # All other architectures get the generic 32 bit implementation.
         'ecl/curve25519_32.c',
       ],
     }],
     [ 'disable_chachapoly==0', {
-      'conditions': [
-        [ 'OS!="win" and target_arch=="x64"', {
-          'sources': [
-            'chacha20_vec.c',
-            'poly1305-donna-x64-sse2-incremental-source.c',
-          ],
-        }, {
-          # not x64
-          'sources': [
-            'chacha20.c',
-            'poly1305.c',
-          ],
-        }],
+      # The ChaCha20 code is linked in through the static ssse3-crypto lib on
+      # all platforms that support SSSE3. There are runtime checks in place to
+      # choose the correct ChaCha implementation at runtime.
+      'sources': [
+        'verified/Hacl_Chacha20.c',
+        'verified/Hacl_Chacha20Poly1305_32.c',
+        'verified/Hacl_Poly1305_32.c',
       ],
     }],
     [ 'fuzz==1', {

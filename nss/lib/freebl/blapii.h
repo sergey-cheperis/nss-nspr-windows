@@ -80,5 +80,14 @@ SECStatus generate_prime(mp_int *prime, int primeLen);
 PRBool aesni_support();
 PRBool clmul_support();
 PRBool avx_support();
+PRBool ssse3_support();
+PRBool sse4_1_support();
+PRBool sse4_2_support();
+PRBool arm_neon_support();
+PRBool arm_aes_support();
+PRBool arm_pmull_support();
+PRBool arm_sha1_support();
+PRBool arm_sha2_support();
+PRBool ppc_crypto_support();
 
 #endif /* _BLAPII_H_ */

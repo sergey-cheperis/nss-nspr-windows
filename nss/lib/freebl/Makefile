@@ -119,6 +119,27 @@ else
         DEFINES += -DNSS_X86
 endif
 endif
+ifeq ($(CPU_ARCH),aarch64)
+    DEFINES += -DUSE_HW_AES
+    EXTRA_SRCS += aes-armv8.c gcm-aarch64.c
+endif
+ifeq ($(CPU_ARCH),arm)
+    EXTRA_SRCS += gcm-arm32-neon.c
+    ifdef CC_IS_CLANG
+        DEFINES += -DUSE_HW_AES
+        EXTRA_SRCS += aes-armv8.c
+    else ifeq (1,$(CC_IS_GCC))
+        # Old compiler doesn't support ARM AES.
+        ifneq (,$(filter 4.9,$(word 1,$(GCC_VERSION)).$(word 2,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+        ifeq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+    endif
+endif
 
 ifeq ($(OS_TARGET),OSF1)
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_NO_MP_WORD
@@ -243,6 +264,7 @@ ifeq ($(CPU_ARCH),arm)
     MPI_SRCS += mpi_arm.c
 endif
 ifeq ($(CPU_ARCH),ppc)
+    EXTRA_SRCS += gcm-ppc.c
 ifdef USE_64
     DEFINES += -DNSS_NO_INIT_SUPPORT
 endif # USE_64
@@ -492,9 +514,10 @@ else
 endif # Solaris for non-sparc family CPUs
 endif # target == SunO
 
-# poly1305-donna-x64-sse2-incremental-source.c requires __int128 support
-# in GCC 4.6.0.
 ifdef USE_64
+# no __int128 at least up to lcc 1.23 (pretending to be gcc5)
+# NB: CC_NAME is not defined here
+ifneq ($(shell $(CC) -? 2>&1 >/dev/null </dev/null | sed -e 's/:.*//;1q'),lcc)
     ifdef CC_IS_CLANG
             HAVE_INT128_SUPPORT = 1
             DEFINES += -DHAVE_INT128_SUPPORT
@@ -508,34 +531,27 @@ ifdef USE_64
             DEFINES += -DHAVE_INT128_SUPPORT
         endif
     endif
+endif # lcc
+endif # USE_64
+
+ifndef HAVE_INT128_SUPPORT
+    DEFINES += -DKRML_VERIFIED_UINT128
 endif
 
 ifndef NSS_DISABLE_CHACHAPOLY
     ifeq ($(CPU_ARCH),x86_64)
-        ifdef HAVE_INT128_SUPPORT
-            EXTRA_SRCS += poly1305-donna-x64-sse2-incremental-source.c
-        else
-            EXTRA_SRCS += poly1305.c
-        endif
-
-        ifneq (1,$(CC_IS_GCC))
-            EXTRA_SRCS += chacha20.c
-        else
-            EXTRA_SRCS += chacha20_vec.c
-        endif
-    else
-        EXTRA_SRCS += poly1305.c
-        EXTRA_SRCS += chacha20.c
+        EXTRA_SRCS += Hacl_Poly1305_128.c Hacl_Chacha20_Vec128.c Hacl_Chacha20Poly1305_128.c
     endif # x86_64
+
+    VERIFIED_SRCS += Hacl_Poly1305_32.c Hacl_Chacha20.c Hacl_Chacha20Poly1305_32.c
 endif # NSS_DISABLE_CHACHAPOLY
 
-ifeq (,$(filter-out i386 x386 x86 x86_64,$(CPU_ARCH)))
-    # All intel architectures get the 64 bit version
-    # With custom uint128 if necessary (faster than generic 32 bit version).
+ifeq (,$(filter-out x86_64 aarch64,$(CPU_ARCH)))
+    # All 64-bit architectures get the 64 bit version.
     ECL_SRCS += curve25519_64.c
-    VERIFIED_SRCS += hacl_curve25519_64.c
+    VERIFIED_SRCS += Hacl_Curve25519_51.c
 else
-    # All non intel architectures get the generic 32 bit implementation (slow!)
+    # All other architectures get the generic 32 bit implementation
     ECL_SRCS += curve25519_32.c
 endif
 
@@ -567,7 +583,7 @@ vpath %.c mpi ecl verified
 vpath %.S mpi ecl
 vpath %.s mpi ecl
 vpath %.asm mpi ecl
-INCLUDES += -Impi -Iecl -Iverified
+INCLUDES += -Impi -Iecl -Iverified -Iverified/kremlin/include -Iverified/kremlin/kremlib/dist/minimal
 
 
 DEFINES += -DMP_API_COMPATIBLE
@@ -585,11 +601,6 @@ ECL_OBJS = $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(ECL_SRCS:.c=$(OBJ_SUFFIX)) $(
 ECL_OBJS += $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(ECL_USERS:.c=$(OBJ_SUFFIX)))
 
 $(ECL_OBJS): $(ECL_HDRS)
-
-VERIFIED_OBJS = $(addprefix $(OBJDIR)/$(PROG_PREFIX), $(VERIFIED_SRCS:.c=$(OBJ_SUFFIX)))
-
-$(VERIFIED_OBJS): $(VERIFIED_HDRS)
-
 
 $(OBJDIR)/sysrand$(OBJ_SUFFIX): sysrand.c unix_rand.c win_rand.c
 
@@ -752,3 +763,28 @@ ifdef INTEL_GCM_CLANG_CL
 #
 $(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
 endif
+
+ifeq ($(CPU_ARCH),arm)
+# When the compiler uses the softfloat ABI, we want to use the compatible softfp ABI when
+# enabling NEON for these objects.
+# Confusingly, __SOFTFP__ is the name of the define for the softfloat ABI, not for the softfp ABI.
+USES_SOFTFLOAT_ABI := $(shell $(CC) -o - -E -dM - $(CFLAGS) < /dev/null | grep __SOFTFP__ > /dev/null && echo 1)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=crypto-neon-fp-armv8$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
+$(OBJDIR)/$(PROG_PREFIX)gcm-arm32-neon$(OBJ_SUFFIX): CFLAGS += -march=armv7 -mfpu=neon$(if $(USES_SOFTFLOAT_ABI), -mfloat-abi=softfp)
+endif
+ifeq ($(CPU_ARCH),aarch64)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
+$(OBJDIR)/$(PROG_PREFIX)gcm-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
+endif
+
+ifeq ($(CPU_ARCH),ppc)
+ifndef NSS_DISABLE_ALTIVEC
+$(OBJDIR)/$(PROG_PREFIX)gcm-ppc$(OBJ_SUFFIX): CFLAGS += -mcrypto -maltivec -mvsx
+$(OBJDIR)/$(PROG_PREFIX)gcm$(OBJ_SUFFIX): CFLAGS += -mcrypto -maltivec -mvsx
+$(OBJDIR)/$(PROG_PREFIX)rijndael$(OBJ_SUFFIX): CFLAGS += -mcrypto -maltivec -mvsx
+endif
+endif
+
+$(OBJDIR)/$(PROG_PREFIX)Hacl_Chacha20_Vec128$(OBJ_SUFFIX): CFLAGS += -mssse3 -msse4 -mavx -maes 
+$(OBJDIR)/$(PROG_PREFIX)Hacl_Chacha20Poly1305_128$(OBJ_SUFFIX): CFLAGS += -mssse3 -msse4 -mavx -maes 
+$(OBJDIR)/$(PROG_PREFIX)Hacl_Poly1305_128$(OBJ_SUFFIX): CFLAGS += -mssse3 -msse4 -mavx -maes -mpclmul

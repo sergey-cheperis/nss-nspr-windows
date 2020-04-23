@@ -8,10 +8,11 @@
 
 #include "ssl.h"
 #include "sslimpl.h"
-#include "secoid.h"   /* for SECOID_GetAlgorithmTag */
-#include "pk11func.h" /* for PK11_ReferenceSlot */
-#include "nss.h"      /* for NSS_RegisterShutdown */
-#include "prinit.h"   /* for PR_CallOnceWithArg */
+#include "secoid.h"        /* for SECOID_GetAlgorithmTag */
+#include "pk11func.h"      /* for PK11_ReferenceSlot */
+#include "nss.h"           /* for NSS_RegisterShutdown */
+#include "prinit.h"        /* for PR_CallOnceWithArg */
+#include "tls13subcerts.h" /* for tls13_ReadDelegatedCredential */
 
 /* This global item is used only in servers.  It is is initialized by
  * SSL_ConfigSecureServer(), and is used in ssl3_SendCertificateRequest().
@@ -46,7 +47,7 @@ ssl_SetupCAListOnce(void *arg)
 }
 
 SECStatus
-ssl_SetupCAList(sslSocket *ss)
+ssl_SetupCAList(const sslSocket *ss)
 {
     if (PR_SUCCESS != PR_CallOnceWithArg(&ssl_server_ca_list.setup,
                                          &ssl_SetupCAListOnce,
@@ -58,11 +59,11 @@ ssl_SetupCAList(sslSocket *ss)
 }
 
 SECStatus
-ssl_GetCertificateRequestCAs(sslSocket *ss, unsigned int *calen,
-                             SECItem **names, unsigned int *nnames)
+ssl_GetCertificateRequestCAs(const sslSocket *ss, unsigned int *calen,
+                             const SECItem **names, unsigned int *nnames)
 {
-    SECItem *name;
-    CERTDistNames *ca_list;
+    const SECItem *name;
+    const CERTDistNames *ca_list;
     unsigned int i;
 
     *calen = 0;
@@ -102,6 +103,8 @@ ssl_NewServerCert()
     sc->serverCertChain = NULL;
     sc->certStatusArray = NULL;
     sc->signedCertTimestamps.len = 0;
+    sc->delegCred.len = 0;
+    sc->delegCredKeyPair = NULL;
     return sc;
 }
 
@@ -148,8 +151,17 @@ ssl_CopyServerCert(const sslServerCert *oc)
     }
 
     if (SECITEM_CopyItem(NULL, &sc->signedCertTimestamps,
-                         &oc->signedCertTimestamps) != SECSuccess)
+                         &oc->signedCertTimestamps) != SECSuccess) {
         goto loser;
+    }
+
+    if (SECITEM_CopyItem(NULL, &sc->delegCred, &oc->delegCred) != SECSuccess) {
+        goto loser;
+    }
+    if (oc->delegCredKeyPair) {
+        sc->delegCredKeyPair = ssl_GetKeyPairRef(oc->delegCredKeyPair);
+    }
+
     return sc;
 loser:
     ssl_FreeServerCert(sc);
@@ -177,6 +189,12 @@ ssl_FreeServerCert(sslServerCert *sc)
     }
     if (sc->signedCertTimestamps.len) {
         SECITEM_FreeItem(&sc->signedCertTimestamps, PR_FALSE);
+    }
+    if (sc->delegCred.len) {
+        SECITEM_FreeItem(&sc->delegCred, PR_FALSE);
+    }
+    if (sc->delegCredKeyPair) {
+        ssl_FreeKeyPair(sc->delegCredKeyPair);
     }
     PORT_ZFree(sc, sizeof(*sc));
 }
@@ -256,7 +274,8 @@ ssl_PopulateKeyPair(sslServerCert *sc, sslKeyPair *keyPair)
 
         /* Get the size of the cert's public key, and remember it. */
         sc->serverKeyBits = SECKEY_PublicKeyStrengthInBits(keyPair->pubKey);
-        if (sc->serverKeyBits == 0) {
+        if (sc->serverKeyBits == 0 ||
+            (keyType == rsaKey && sc->serverKeyBits > SSL_MAX_RSA_KEY_BITS)) {
             PORT_SetError(SEC_ERROR_INVALID_ARGS);
             return SECFailure;
         }
@@ -306,6 +325,79 @@ ssl_PopulateSignedCertTimestamps(sslServerCert *sc,
                                 signedCertTimestamps);
     }
     return SECSuccess;
+}
+
+/* Installs the given delegated credential (DC) and DC private key into the
+ * certificate.
+ *
+ * It's the caller's responsibility to ensure that the DC is well-formed and
+ * that the DC public key matches the DC private key.
+ */
+static SECStatus
+ssl_PopulateDelegatedCredential(sslServerCert *sc,
+                                const SECItem *delegCred,
+                                const SECKEYPrivateKey *delegCredPrivKey)
+{
+    sslDelegatedCredential *dc = NULL;
+
+    if (sc->delegCred.len) {
+        SECITEM_FreeItem(&sc->delegCred, PR_FALSE);
+    }
+
+    if (sc->delegCredKeyPair) {
+        ssl_FreeKeyPair(sc->delegCredKeyPair);
+        sc->delegCredKeyPair = NULL;
+    }
+
+    /* Both the DC and its private are present. */
+    if (delegCred && delegCredPrivKey) {
+        SECStatus rv;
+        SECKEYPublicKey *pub;
+        SECKEYPrivateKey *priv;
+
+        if (!delegCred->data || delegCred->len == 0) {
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            goto loser;
+        }
+
+        /* Parse the DC. */
+        rv = tls13_ReadDelegatedCredential(delegCred->data, delegCred->len, &dc);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+
+        /* Make a copy of the DC. */
+        rv = SECITEM_CopyItem(NULL, &sc->delegCred, delegCred);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
+
+        /* Make a copy of the DC private key. */
+        priv = SECKEY_CopyPrivateKey(delegCredPrivKey);
+        if (!priv) {
+            goto loser;
+        }
+
+        /* parse public key from the DC. */
+        pub = SECKEY_ExtractPublicKey(dc->spki);
+        if (!pub) {
+            goto loser;
+        }
+
+        sc->delegCredKeyPair = ssl_NewKeyPair(priv, pub);
+
+        /* Attempting to configure either the DC or DC private key, but not both. */
+    } else if (delegCred || delegCredPrivKey) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto loser;
+    }
+
+    tls13_DestroyDelegatedCredential(dc);
+    return SECSuccess;
+
+loser:
+    tls13_DestroyDelegatedCredential(dc);
+    return SECFailure;
 }
 
 /* Find any existing certificates that overlap with the new certificate and
@@ -378,6 +470,12 @@ ssl_ConfigCert(sslSocket *ss, sslAuthTypeMask authTypes,
     if (rv != SECSuccess) {
         goto loser;
     }
+    rv = ssl_PopulateDelegatedCredential(sc, data->delegCred,
+                                         data->delegCredPrivKey);
+    if (rv != SECSuccess) {
+        error_code = PORT_GetError();
+        goto loser;
+    }
     ssl_ClearMatchingCerts(ss, sc->authTypes, sc->namedCurve);
     PR_APPEND_LINK(&sc->link, &ss->serverCerts);
     return SECSuccess;
@@ -435,8 +533,6 @@ ssl_GetCertificateAuthTypes(CERTCertificate *cert, SSLAuthType targetAuthType)
         case SEC_OID_PKCS1_RSA_ENCRYPTION:
             if (cert->keyUsage & KU_DIGITAL_SIGNATURE) {
                 authTypes |= 1 << ssl_auth_rsa_sign;
-                /* This certificate is RSA, assume that it's also PSS. */
-                authTypes |= 1 << ssl_auth_rsa_pss;
             }
 
             if (cert->keyUsage & KU_KEY_ENCIPHERMENT) {
@@ -549,7 +645,7 @@ SSL_ConfigServerCert(PRFileDesc *fd, CERTCertificate *cert,
     sslKeyPair *keyPair;
     SECStatus rv;
     SSLExtraServerCertData dataCopy = {
-        ssl_auth_null, NULL, NULL, NULL
+        ssl_auth_null, NULL, NULL, NULL, NULL, NULL
     };
     sslAuthTypeMask authTypes;
 

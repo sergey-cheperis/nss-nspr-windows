@@ -27,7 +27,7 @@ SECStatus
 ec_Curve25519_pt_validate(const SECItem *px)
 {
     PRUint8 *p;
-    int i;
+    PRUint64 i;
     PRUint8 forbiddenValues[12][32] = {
         { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -113,6 +113,9 @@ ec_Curve25519_pt_mul(SECItem *X, SECItem *k, SECItem *P)
             return SECFailure;
         }
         px = P->data;
+    }
+    if (k->len != 32) {
+        return SECFailure;
     }
 
     SECStatus rv = ec_Curve25519_mul(X->data, k->data, px);

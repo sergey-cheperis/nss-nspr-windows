@@ -15,6 +15,47 @@
 #include "softoken.h"
 
 /*
+ * ******************** Error mapping *******************************
+ */
+/*
+ * map all the SEC_ERROR_xxx error codes that may be returned by freebl
+ * functions to CKR_xxx.  return CKR_DEVICE_ERROR by default for backward
+ * compatibility.
+ */
+CK_RV
+sftk_MapCryptError(int error)
+{
+    switch (error) {
+        case SEC_ERROR_INVALID_ARGS:
+        case SEC_ERROR_BAD_DATA: /* MP_RANGE gets mapped to this */
+            return CKR_ARGUMENTS_BAD;
+        case SEC_ERROR_INPUT_LEN:
+            return CKR_DATA_LEN_RANGE;
+        case SEC_ERROR_OUTPUT_LEN:
+            return CKR_BUFFER_TOO_SMALL;
+        case SEC_ERROR_LIBRARY_FAILURE:
+            return CKR_GENERAL_ERROR;
+        case SEC_ERROR_NO_MEMORY:
+            return CKR_HOST_MEMORY;
+        case SEC_ERROR_BAD_SIGNATURE:
+            return CKR_SIGNATURE_INVALID;
+        case SEC_ERROR_INVALID_KEY:
+            return CKR_KEY_SIZE_RANGE;
+        case SEC_ERROR_BAD_KEY:        /* an EC public key that fails validation */
+            return CKR_KEY_SIZE_RANGE; /* the closest error code */
+        case SEC_ERROR_UNSUPPORTED_EC_POINT_FORM:
+            return CKR_TEMPLATE_INCONSISTENT;
+        case SEC_ERROR_UNSUPPORTED_KEYALG:
+            return CKR_MECHANISM_INVALID;
+        case SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE:
+            return CKR_DOMAIN_PARAMS_INVALID;
+        /* key pair generation failed after max number of attempts */
+        case SEC_ERROR_NEED_RANDOM:
+            return CKR_FUNCTION_FAILED;
+    }
+    return CKR_DEVICE_ERROR;
+}
+/*
  * ******************** Attribute Utilities *******************************
  */
 
@@ -100,7 +141,7 @@ sftk_DestroyAttribute(SFTKAttribute *attribute)
 void
 sftk_FreeAttribute(SFTKAttribute *attribute)
 {
-    if (attribute->freeAttr) {
+    if (attribute && attribute->freeAttr) {
         sftk_DestroyAttribute(attribute);
         return;
     }
@@ -1193,7 +1234,7 @@ sftk_DeleteObject(SFTKSession *session, SFTKObject *object)
 
     /* Handle Token case */
     if (so && so->session) {
-        SFTKSession *session = so->session;
+        session = so->session;
         PZ_Lock(session->objectLock);
         sftkqueue_delete(&so->sessionList, 0, session->objects, 0);
         PZ_Unlock(session->objectLock);
@@ -1208,7 +1249,7 @@ sftk_DeleteObject(SFTKSession *session, SFTKObject *object)
         SFTKTokenObject *to = sftk_narrowToTokenObject(object);
         PORT_Assert(to);
 #endif
-        crv = sftkdb_DestroyObject(handle, object->handle);
+        crv = sftkdb_DestroyObject(handle, object->handle, object->objclass);
         sftk_freeDB(handle);
     }
     return crv;
@@ -1269,7 +1310,7 @@ static const CK_ULONG ecPubKeyAttrsCount =
 
 static const CK_ATTRIBUTE_TYPE commonPrivKeyAttrs[] = {
     CKA_DECRYPT, CKA_SIGN, CKA_SIGN_RECOVER, CKA_UNWRAP, CKA_SUBJECT,
-    CKA_SENSITIVE, CKA_EXTRACTABLE, CKA_NETSCAPE_DB
+    CKA_SENSITIVE, CKA_EXTRACTABLE, CKA_NETSCAPE_DB, CKA_PUBLIC_KEY_INFO
 };
 static const CK_ULONG commonPrivKeyAttrsCount =
     sizeof(commonPrivKeyAttrs) / sizeof(commonPrivKeyAttrs[0]);
@@ -1772,7 +1813,6 @@ sftk_NewSession(CK_SLOT_ID slotID, CK_NOTIFY notify, CK_VOID_PTR pApplication,
         return NULL;
 
     session->next = session->prev = NULL;
-    session->refCount = 1;
     session->enc_context = NULL;
     session->hash_context = NULL;
     session->sign_context = NULL;
@@ -1796,11 +1836,10 @@ sftk_NewSession(CK_SLOT_ID slotID, CK_NOTIFY notify, CK_VOID_PTR pApplication,
 }
 
 /* free all the data associated with a session. */
-static void
+void
 sftk_DestroySession(SFTKSession *session)
 {
     SFTKObjectList *op, *next;
-    PORT_Assert(session->refCount == 0);
 
     /* clean out the attributes */
     /* since no one is referencing us, it's safe to walk the chain
@@ -1844,31 +1883,20 @@ sftk_SessionFromHandle(CK_SESSION_HANDLE handle)
 
     PZ_Lock(lock);
     sftkqueue_find(session, handle, slot->head, slot->sessHashSize);
-    if (session)
-        session->refCount++;
     PZ_Unlock(lock);
 
     return (session);
 }
 
 /*
- * release a reference to a session handle
+ * release a reference to a session handle. This method of using SFTKSessions
+ * is deprecated, but the pattern should be retained until a future effort
+ * to refactor all SFTKSession users at once is completed.
  */
 void
 sftk_FreeSession(SFTKSession *session)
 {
-    PRBool destroy = PR_FALSE;
-    SFTKSlot *slot = sftk_SlotFromSession(session);
-    PZLock *lock = SFTK_SESSION_LOCK(slot, session->handle);
-
-    PZ_Lock(lock);
-    if (session->refCount == 1)
-        destroy = PR_TRUE;
-    session->refCount--;
-    PZ_Unlock(lock);
-
-    if (destroy)
-        sftk_DestroySession(session);
+    return;
 }
 
 void
@@ -1981,4 +2009,77 @@ SFTKTokenObject *
 sftk_narrowToTokenObject(SFTKObject *obj)
 {
     return sftk_isToken(obj->handle) ? (SFTKTokenObject *)obj : NULL;
+}
+
+/* Constant time helper functions */
+
+/* sftk_CKRVToMask returns, in constant time, a mask value of
+ * all ones if rv == CKR_OK.  Otherwise it returns zero. */
+unsigned int
+sftk_CKRVToMask(CK_RV rv)
+{
+    PR_STATIC_ASSERT(CKR_OK == 0);
+    return ~CT_NOT_ZERO(rv);
+}
+
+/* sftk_CheckCBCPadding checks, in constant time, the padding validity and
+ * accordingly sets the pad length. */
+CK_RV
+sftk_CheckCBCPadding(CK_BYTE_PTR pBuf, unsigned int bufLen,
+                     unsigned int blockSize, unsigned int *outPadSize)
+{
+    PORT_Assert(outPadSize);
+
+    unsigned int padSize = (unsigned int)pBuf[bufLen - 1];
+
+    /* If padSize <= blockSize, set goodPad to all-1s and all-0s otherwise.*/
+    unsigned int goodPad = CT_DUPLICATE_MSB_TO_ALL(~(blockSize - padSize));
+    /* padSize should not be 0 */
+    goodPad &= CT_NOT_ZERO(padSize);
+
+    unsigned int i;
+    for (i = 0; i < blockSize; i++) {
+        /* If i < padSize, set loopMask to all-1s and all-0s otherwise.*/
+        unsigned int loopMask = CT_DUPLICATE_MSB_TO_ALL(~(padSize - 1 - i));
+        /* Get the padding value (should be padSize) from buffer */
+        unsigned int padVal = pBuf[bufLen - 1 - i];
+        /* Update goodPad only if i < padSize */
+        goodPad &= CT_SEL(loopMask, ~(padVal ^ padSize), goodPad);
+    }
+
+    /* If any of the final padding bytes had the wrong value, one or more
+     * of the lower eight bits of |goodPad| will be cleared. We AND the
+     * bottom 8 bits together and duplicate the result to all the bits. */
+    goodPad &= goodPad >> 4;
+    goodPad &= goodPad >> 2;
+    goodPad &= goodPad >> 1;
+    goodPad <<= sizeof(goodPad) * 8 - 1;
+    goodPad = CT_DUPLICATE_MSB_TO_ALL(goodPad);
+
+    /* Set outPadSize to padSize or 0 */
+    *outPadSize = CT_SEL(goodPad, padSize, 0);
+    /* Return OK if the pad is valid */
+    return CT_SEL(goodPad, CKR_OK, CKR_ENCRYPTED_DATA_INVALID);
+}
+
+void
+sftk_EncodeInteger(PRUint64 integer, CK_ULONG num_bits, CK_BBOOL littleEndian,
+                   CK_BYTE_PTR output, CK_ULONG_PTR output_len)
+{
+    if (output_len) {
+        *output_len = (num_bits / 8);
+    }
+
+    PR_ASSERT(num_bits > 0 && num_bits <= 64 && (num_bits % 8) == 0);
+
+    if (littleEndian == CK_TRUE) {
+        for (size_t offset = 0; offset < num_bits / 8; offset++) {
+            output[offset] = (unsigned char)((integer >> (offset * 8)) & 0xFF);
+        }
+    } else {
+        for (size_t offset = 0; offset < num_bits / 8; offset++) {
+            PRUint64 shift = num_bits - (offset + 1) * 8;
+            output[offset] = (unsigned char)((integer >> shift) & 0xFF);
+        }
+    }
 }

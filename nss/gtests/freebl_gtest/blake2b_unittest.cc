@@ -50,7 +50,7 @@ TEST_P(Blake2BKATUnkeyed, Unkeyed) {
 TEST_P(Blake2BKATKeyed, Keyed) {
   std::vector<uint8_t> values(BLAKE2B512_LENGTH);
   SECStatus rv = BLAKE2B_MAC_HashBuf(values.data(), kat_data.data(),
-                                     std::get<0>(GetParam()), key.data(),
+                                     std::get<0>(GetParam()), kat_key.data(),
                                      BLAKE2B_KEY_SIZE);
   ASSERT_EQ(SECSuccess, rv);
   EXPECT_EQ(values, std::get<1>(GetParam()));
@@ -113,6 +113,18 @@ TEST_F(Blake2BTests, ContextTest2) {
       << "BLAKE2B_End failed!";
 }
 
+TEST_F(Blake2BTests, NullContextTest) {
+  SECStatus rv = BLAKE2B_Begin(nullptr);
+  ASSERT_EQ(SECFailure, rv);
+
+  rv = BLAKE2B_Update(nullptr, kat_data.data(), 128);
+  ASSERT_EQ(SECFailure, rv);
+
+  std::vector<uint8_t> digest(BLAKE2B512_LENGTH);
+  rv = BLAKE2B_End(nullptr, digest.data(), nullptr, BLAKE2B512_LENGTH);
+  ASSERT_EQ(SECFailure, rv);
+}
+
 TEST_F(Blake2BTests, CloneTest) {
   ScopedBLAKE2BContext ctx(BLAKE2B_NewContext());
   ScopedBLAKE2BContext cloned_ctx(BLAKE2B_NewContext());
@@ -139,7 +151,7 @@ TEST_F(Blake2BTests, NullTest) {
   EXPECT_EQ(std::get<1>(TestcasesUnkeyed[0]), digest);
 
   digest = std::vector<uint8_t>(BLAKE2B512_LENGTH);
-  rv = BLAKE2B_MAC_HashBuf(digest.data(), nullptr, 0, key.data(),
+  rv = BLAKE2B_MAC_HashBuf(digest.data(), nullptr, 0, kat_key.data(),
                            BLAKE2B_KEY_SIZE);
   ASSERT_EQ(SECSuccess, rv);
   EXPECT_EQ(std::get<1>(TestcasesKeyed[0]), digest);

@@ -45,8 +45,10 @@ class TlsConnectTestBase : public ::testing::Test {
   TlsConnectTestBase(SSLProtocolVariant variant, uint16_t version);
   virtual ~TlsConnectTestBase();
 
-  void SetUp();
-  void TearDown();
+  virtual void SetUp();
+  virtual void TearDown();
+
+  PRTime now() const { return now_; }
 
   // Initialize client and server.
   void Init();
@@ -55,13 +57,17 @@ class TlsConnectTestBase : public ::testing::Test {
   // Clear the server session cache.
   void ClearServerCache();
   // Make sure TLS is configured for a connection.
-  void EnsureTlsSetup();
+  virtual void EnsureTlsSetup();
   // Reset and keep the same certificate names
   void Reset();
   // Reset, and update the certificate names on both peers
   void Reset(const std::string& server_name,
              const std::string& client_name = "client");
+  // Replace the server.
+  void MakeNewServer();
 
+  // Set up
+  void StartConnect();
   // Run the handshake.
   void Handshake();
   // Connect and check that it works.
@@ -90,6 +96,7 @@ class TlsConnectTestBase : public ::testing::Test {
                    std::function<void(SSLNamedGroup)> check_group);
   void CheckShares(const DataBuffer& shares,
                    std::function<void(SSLNamedGroup)> check_group);
+  void CheckEpochs(uint16_t client_epoch, uint16_t server_epoch) const;
 
   void ConfigureVersion(uint16_t version);
   void SetExpectedVersion(uint16_t version);
@@ -101,15 +108,18 @@ class TlsConnectTestBase : public ::testing::Test {
   void EnableOnlyDheCiphers();
   void EnableSomeEcdhCiphers();
   void EnableExtendedMasterSecret();
+  void ConfigureSelfEncrypt();
   void ConfigureSessionCache(SessionResumptionMode client,
                              SessionResumptionMode server);
   void EnableAlpn();
-  void EnableAlpn(const uint8_t* val, size_t len);
+  void EnableAlpnWithCallback(const std::vector<uint8_t>& client,
+                              std::string server_choice);
+  void EnableAlpn(const std::vector<uint8_t>& vals);
   void EnsureModelSockets();
   void CheckAlpn(const std::string& val);
   void EnableSrtp();
   void CheckSrtp() const;
-  void SendReceive();
+  void SendReceive(size_t total = 50);
   void SetupForZeroRtt();
   void SetupForResume();
   void ZeroRttSendReceive(
@@ -121,6 +131,16 @@ class TlsConnectTestBase : public ::testing::Test {
   void DisableECDHEServerKeyReuse();
   void SkipVersionChecks();
 
+  // Move the DTLS timers for both endpoints to pop the next timer.
+  void ShiftDtlsTimers();
+  void AdvanceTime(PRTime time_shift);
+
+  void ResetAntiReplay(PRTime window);
+  void RolloverAntiReplay();
+
+  void SaveAlgorithmPolicy();
+  void RestoreAlgorithmPolicy();
+
  protected:
   SSLProtocolVariant variant_;
   std::shared_ptr<TlsAgent> client_;
@@ -131,6 +151,7 @@ class TlsConnectTestBase : public ::testing::Test {
   SessionResumptionMode expected_resumption_mode_;
   uint8_t expected_resumptions_;
   std::vector<std::vector<uint8_t>> session_ids_;
+  ScopedSSLAntiReplayContext anti_replay_;
 
   // A simple value of "a", "b".  Note that the preferred value of "a" is placed
   // at the end, because the NSS API follows the now defunct NPN specification,
@@ -138,14 +159,24 @@ class TlsConnectTestBase : public ::testing::Test {
   // NSS will move this final entry to the front when used with ALPN.
   const uint8_t alpn_dummy_val_[4] = {0x01, 0x62, 0x01, 0x61};
 
+  // A list of algorithm IDs whose policies need to be preserved
+  // around test cases.  In particular, DSA is checked in
+  // ssl_extension_unittest.cc.
+  const std::vector<SECOidTag> algorithms_ = {SEC_OID_APPLY_SSL_POLICY,
+                                              SEC_OID_ANSIX9_DSA_SIGNATURE,
+                                              SEC_OID_CURVE25519, SEC_OID_SHA1};
+  std::vector<std::tuple<SECOidTag, uint32_t>> saved_policies_;
+
  private:
   void CheckResumption(SessionResumptionMode expected);
   void CheckExtendedMasterSecret();
   void CheckEarlyDataAccepted();
+  static PRTime TimeFunc(void* arg);
 
   bool expect_extended_master_secret_;
   bool expect_early_data_accepted_;
   bool skip_version_checks_;
+  PRTime now_;
 
   // Track groups and make sure that there are no duplicates.
   class DuplicateGroupChecker {
@@ -197,6 +228,52 @@ class TlsConnectGeneric : public TlsConnectTestBase,
                               std::tuple<SSLProtocolVariant, uint16_t>> {
  public:
   TlsConnectGeneric();
+};
+
+class TlsConnectGenericResumption
+    : public TlsConnectTestBase,
+      public ::testing::WithParamInterface<
+          std::tuple<SSLProtocolVariant, uint16_t, bool>> {
+ private:
+  bool external_cache_;
+
+ public:
+  TlsConnectGenericResumption();
+
+  virtual void EnsureTlsSetup() {
+    TlsConnectTestBase::EnsureTlsSetup();
+    // Enable external resumption token cache.
+    if (external_cache_) {
+      client_->SetResumptionTokenCallback();
+    }
+  }
+
+  bool use_external_cache() const { return external_cache_; }
+};
+
+class TlsConnectTls13ResumptionToken
+    : public TlsConnectTestBase,
+      public ::testing::WithParamInterface<SSLProtocolVariant> {
+ public:
+  TlsConnectTls13ResumptionToken();
+
+  virtual void EnsureTlsSetup() {
+    TlsConnectTestBase::EnsureTlsSetup();
+    client_->SetResumptionTokenCallback();
+  }
+};
+
+class TlsConnectGenericResumptionToken
+    : public TlsConnectTestBase,
+      public ::testing::WithParamInterface<
+          std::tuple<SSLProtocolVariant, uint16_t>> {
+ public:
+  TlsConnectGenericResumptionToken();
+
+  virtual void EnsureTlsSetup() {
+    TlsConnectTestBase::EnsureTlsSetup();
+    client_->SetResumptionTokenCallback();
+  }
 };
 
 // A Pre TLS 1.2 generic test.
@@ -251,6 +328,11 @@ class TlsConnectDatagram13 : public TlsConnectTestBase {
       : TlsConnectTestBase(ssl_variant_datagram, SSL_LIBRARY_VERSION_TLS_1_3) {}
 };
 
+class TlsConnectDatagramPre13 : public TlsConnectDatagram {
+ public:
+  TlsConnectDatagramPre13() {}
+};
+
 // A variant that is used only with Pre13.
 class TlsConnectGenericPre13 : public TlsConnectGeneric {};
 
@@ -259,12 +341,14 @@ class TlsKeyExchangeTest : public TlsConnectGeneric {
   std::shared_ptr<TlsExtensionCapture> groups_capture_;
   std::shared_ptr<TlsExtensionCapture> shares_capture_;
   std::shared_ptr<TlsExtensionCapture> shares_capture2_;
-  std::shared_ptr<TlsInspectorRecordHandshakeMessage> capture_hrr_;
+  std::shared_ptr<TlsHandshakeRecorder> capture_hrr_;
 
   void EnsureKeyShareSetup();
   void ConfigNamedGroups(const std::vector<SSLNamedGroup>& groups);
-  std::vector<SSLNamedGroup> GetGroupDetails(const DataBuffer& ext);
-  std::vector<SSLNamedGroup> GetShareDetails(const DataBuffer& ext);
+  std::vector<SSLNamedGroup> GetGroupDetails(
+      const std::shared_ptr<TlsExtensionCapture>& capture);
+  std::vector<SSLNamedGroup> GetShareDetails(
+      const std::shared_ptr<TlsExtensionCapture>& capture);
   void CheckKEXDetails(const std::vector<SSLNamedGroup>& expectedGroups,
                        const std::vector<SSLNamedGroup>& expectedShares);
   void CheckKEXDetails(const std::vector<SSLNamedGroup>& expectedGroups,
