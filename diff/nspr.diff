@@ -1,0 +1,12 @@
+diff -r d451a36c2f3d pr/include/md/_win95.h
+--- a/pr/include/md/_win95.h	Fri Jan 31 21:41:55 2020 +0100
++++ b/pr/include/md/_win95.h	Wed Apr 22 18:12:23 2020 -0700
+@@ -317,7 +317,7 @@
+ #define _MD_ATOMIC_ADD(ptr,val)    (InterlockedExchangeAdd((PLONG)ptr, (LONG)val) + val)
+ #define _MD_ATOMIC_DECREMENT(x)       InterlockedDecrement((PLONG)x)
+ #endif /* x86 */
+-#define _MD_ATOMIC_SET(x,y)           InterlockedExchange((PLONG)x, (LONG)y)
++#define _MD_ATOMIC_SET(x,y)           _InterlockedExchange((PLONG)x, (LONG)y)
+ 
+ #define _MD_INIT_IO                   _PR_MD_INIT_IO
+ 

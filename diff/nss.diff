@@ -1,0 +1,23 @@
+diff -r c167cdd131ce cmd/shlibsign/sign.sh
+--- a/cmd/shlibsign/sign.sh	Fri Apr 03 14:22:20 2020 -0700
++++ b/cmd/shlibsign/sign.sh	Wed Apr 22 18:12:33 2020 -0700
+@@ -1,4 +1,7 @@
+ #!/bin/sh
++# Removed because shlibsign is crashing or hanging when building on Windows
++exit
++
+ # This Source Code Form is subject to the terms of the Mozilla Public
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+diff -r c167cdd131ce coreconf/WIN95.mk
+--- a/coreconf/WIN95.mk	Fri Apr 03 14:22:20 2020 -0700
++++ b/coreconf/WIN95.mk	Wed Apr 22 18:12:33 2020 -0700
+@@ -9,7 +9,7 @@
+ 
+ include $(CORE_DEPTH)/coreconf/WIN32.mk
+ 
+-DEFINES += -DWIN95
++DEFINES += -DWIN95 -D_WIN32_WINNT=_WIN32_WINNT_WIN6
+ 
+ # WINNT uses the lib prefix, Win95 doesn't
+ NSPR31_LIB_PREFIX = $(NULL)

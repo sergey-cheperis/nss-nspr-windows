@@ -317,7 +317,7 @@ extern PRInt32 _MD_CloseSocket(PROsfd osfd);
 #define _MD_ATOMIC_ADD(ptr,val)    (InterlockedExchangeAdd((PLONG)ptr, (LONG)val) + val)
 #define _MD_ATOMIC_DECREMENT(x)       InterlockedDecrement((PLONG)x)
 #endif /* x86 */
-#define _MD_ATOMIC_SET(x,y)           InterlockedExchange((PLONG)x, (LONG)y)
+#define _MD_ATOMIC_SET(x,y)           _InterlockedExchange((PLONG)x, (LONG)y)
 
 #define _MD_INIT_IO                   _PR_MD_INIT_IO
 
