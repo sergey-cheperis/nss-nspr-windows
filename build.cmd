@@ -19,6 +19,7 @@ SET "Bash=%MozBuild%\msys\bin\bash --login -i -c"
 SET "SrcDir=%~dp0nss"
 SET "MOZILLABUILD=%MozBuild%\"
 
+SET "PATH=%PATH%;%MOZILLABUILD%moztools-x64\bin"
 
 :: 32-bit builds
 CALL "%VsPath%\vcvars32.bat"
@@ -30,6 +31,8 @@ IF %errorlevel% NEQ 0 EXIT %errorlevel%
 %BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
+:: fix: these misplaced objs cause a build with a different arch to fail
+del nss\lib\ckfw\builtins\testlib\*.obj
 
 :: 64-bit builds
 SET "CommonOpt=%CommonOpt% USE_64=1"
@@ -42,3 +45,6 @@ IF %errorlevel% NEQ 0 EXIT %errorlevel%
 
 %BASH% "cd '%SrcDir%'; %CommonOpt% %ReleaseOpt% make %Target%"
 IF %errorlevel% NEQ 0 EXIT %errorlevel%
+
+:: fix: these misplaced objs cause a build with a different arch to fail
+del nss\lib\ckfw\builtins\testlib\*.obj
