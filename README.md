@@ -9,8 +9,8 @@ client and server applications. For more information, see https://developer.mozi
 and is required to build NSS. See https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSPR.
 
 This repository contains following stable releases:
-* NSPR 4.17
-* NSS 3.34.1
+* NSPR 4.25
+* NSS 3.51.1
 
 Sources were patched to fix minor Windows-specific build errors. 
 
@@ -27,7 +27,7 @@ Following sections are applicable if you are going to compile libraries yourself
 ## Required software
 
 1. Visual Studio 2017 with C++ support, x86 and amd64 platforms, Windows 8.1 or 10 SDK, and ATL (not tested with other versions)
-2. Mozilla Build suite: https://wiki.mozilla.org/MozillaBuild
+2. Mozilla Build suite: https://wiki.mozilla.org/MozillaBuild (can be installed with Chocolatey: `choco install MozillaBuild`)
 
 ## Usage
 
@@ -36,9 +36,11 @@ Following sections are applicable if you are going to compile libraries yourself
 3. Run **test.cmd** if you want to run tests (can take a very long time).
 4. Run **powershell -file create-prebuilt-archive.ps1** to create the pre-built zip archive.
 
+For you reference, patches that were applied to achieve a successful build, are located in **diff** subdirectory.
+
 ## Known issues
 
-1. During one of build stages, **shlibsign** program may produce "Debug Assertion" dialogs. Just click "Ignore" in these dialogs.
+1. **shlibsign** crashes or hangs, so it has been disabled.
 2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
 
 ## References
