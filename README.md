@@ -36,12 +36,14 @@ Following sections are applicable if you are going to compile libraries yourself
 3. Run **test.cmd** if you want to run tests (can take a very long time).
 4. Run **powershell -file create-prebuilt-archive.ps1** to create the pre-built zip archive.
 
-For you reference, patches that were applied to achieve a successful build, are located in **diff** subdirectory.
+For you reference, patches that were used to achieve a successful build, are located in **diff** subdirectory. They are already
+applied to the source tree.
 
 ## Known issues
 
 1. **shlibsign** crashes or hangs, so it has been disabled.
-2. NSS does not seem to support building statically, so you'll have to distribute all the DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
+2. NSS does not seem to support building statically yet (though there is work in progress), so you'll have to distribute all the
+DLL's with your program (except **gtest132.dll** and **gtestutil32.dll**).
 
 ## References
 
